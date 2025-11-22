@@ -1,0 +1,39 @@
+{
+  "version": 1,
+  "author": "ESP32 Student",
+  "editor": "wokwi",
+  "parts": [
+    {
+      "type": "wokwi-esp32-h2",
+      "id": "esp32",
+      "top": 0,
+      "left": 0,
+      "attrs": {}
+    },
+    {
+      "type": "mpu6050",
+      "id": "mpu",
+      "top": 200,
+      "left": 300,
+      "attrs": {}
+    },
+    {
+      "type": "wokwi-neopixel-ring",
+      "id": "leds",
+      "top": -100,
+      "left": 300,
+      "attrs": {
+        "pixels": "16"
+      }
+    }
+  ],
+  "connections": [
+    ["esp32:GPIO5", "mpu:SCL", "black", ""],
+    ["esp32:GPIO6", "mpu:SDA", "black", ""],
+    ["esp32:3V3", "mpu:VCC", "red", ""],
+    ["esp32:GND", "mpu:GND", "black", ""],
+    ["esp32:GPIO8", "leds:DIN", "green", ""],
+    ["esp32:3V3", "leds:VCC", "red", ""],
+    ["esp32:GND", "leds:GND", "black", ""]
+  ]
+}
