@@ -1,39 +1,142 @@
 {
   "version": 1,
-  "author": "ESP32 Student",
+  "author": "DezzLem",
   "editor": "wokwi",
   "parts": [
     {
-      "type": "wokwi-esp32-h2",
-      "id": "esp32",
+      "type": "board-esp32-h2-devkitm-1",
+      "id": "esp",
       "top": 0,
       "left": 0,
       "attrs": {}
     },
     {
-      "type": "mpu6050",
-      "id": "mpu",
-      "top": 200,
+      "type": "wokwi-mpu6050",
+      "id": "mpu6050",
+      "top": 150,
       "left": 300,
       "attrs": {}
     },
     {
-      "type": "wokwi-neopixel-ring",
-      "id": "leds",
-      "top": -100,
-      "left": 300,
-      "attrs": {
-        "pixels": "16"
-      }
+      "type": "wokwi-led-ring",
+      "id": "ring1",
+      "top": 300,
+      "left": 100,
+      "attrs": { "pixels": "16" }
+    },
+    { 
+      "type": "wokwi-neopixel", 
+      "id": "rgb1", 
+      "top": 50, 
+      "left": 400, 
+      "attrs": {} 
+    },
+    { 
+      "type": "wokwi-neopixel", 
+      "id": "rgb2", 
+      "top": 50, 
+      "left": 450, 
+      "attrs": {} 
+    },
+    { 
+      "type": "wokwi-neopixel", 
+      "id": "rgb3", 
+      "top": 50, 
+      "left": 500, 
+      "attrs": {} 
+    },
+    { 
+      "type": "wokwi-neopixel", 
+      "id": "rgb4", 
+      "top": 100, 
+      "left": 400, 
+      "attrs": {} 
+    },
+    { 
+      "type": "wokwi-neopixel", 
+      "id": "rgb5", 
+      "top": 100, 
+      "left": 450, 
+      "attrs": {} 
+    },
+    { 
+      "type": "wokwi-neopixel", 
+      "id": "rgb6", 
+      "top": 100, 
+      "left": 500, 
+      "attrs": {} 
+    },
+    { 
+      "type": "wokwi-neopixel", 
+      "id": "rgb7", 
+      "top": 150, 
+      "left": 400, 
+      "attrs": {} 
+    },
+    { 
+      "type": "wokwi-neopixel", 
+      "id": "rgb8", 
+      "top": 150, 
+      "left": 450, 
+      "attrs": {} 
+    },
+    { 
+      "type": "wokwi-neopixel", 
+      "id": "rgb9", 
+      "top": 150, 
+      "left": 500, 
+      "attrs": {} 
+    },
+    { 
+      "type": "wokwi-neopixel", 
+      "id": "rgb10", 
+      "top": 200, 
+      "left": 400, 
+      "attrs": {} 
+    },
+    { 
+      "type": "wokwi-neopixel", 
+      "id": "rgb11", 
+      "top": 200, 
+      "left": 450, 
+      "attrs": {} 
+    },
+    { 
+      "type": "wokwi-neopixel", 
+      "id": "rgb12", 
+      "top": 200, 
+      "left": 500, 
+      "attrs": {} 
     }
   ],
   "connections": [
-    ["esp32:GPIO5", "mpu:SCL", "black", ""],
-    ["esp32:GPIO6", "mpu:SDA", "black", ""],
-    ["esp32:3V3", "mpu:VCC", "red", ""],
-    ["esp32:GND", "mpu:GND", "black", ""],
-    ["esp32:GPIO8", "leds:DIN", "green", ""],
-    ["esp32:3V3", "leds:VCC", "red", ""],
-    ["esp32:GND", "leds:GND", "black", ""]
-  ]
+    ["esp:TX", "$serialMonitor:RX", "", []],
+    ["esp:RX", "$serialMonitor:TX", "", []],
+    
+    ["esp:GND", "mpu6050:GND", "black", []],
+    ["esp:3V3", "mpu6050:VCC", "red", []],
+    ["esp:D5", "mpu6050:SCL", "blue", []],
+    ["esp:D6", "mpu6050:SDA", "blue", []],
+    
+    ["esp:GND", "ring1:GND", "black", []],
+    ["esp:5V", "ring1:VCC", "red", []],
+    ["esp:D8", "ring1:DIN", "green", []],
+    
+    ["esp:GND", "rgb1:GND", "black", []],
+    ["esp:5V", "rgb1:VCC", "red", []],
+    ["esp:D3", "rgb1:DIN", "green", []],
+    
+    ["rgb1:DOUT", "rgb2:DIN", "green", []],
+    ["rgb2:DOUT", "rgb3:DIN", "green", []],
+    ["rgb3:DOUT", "rgb4:DIN", "green", []],
+    ["rgb4:DOUT", "rgb5:DIN", "green", []],
+    ["rgb5:DOUT", "rgb6:DIN", "green", []],
+    ["rgb6:DOUT", "rgb7:DIN", "green", []],
+    ["rgb7:DOUT", "rgb8:DIN", "green", []],
+    ["rgb8:DOUT", "rgb9:DIN", "green", []],
+    ["rgb9:DOUT", "rgb10:DIN", "green", []],
+    ["rgb10:DOUT", "rgb11:DIN", "green", []],
+    ["rgb11:DOUT", "rgb12:DIN", "green", []]
+  ],
+  "dependencies": {}
 }
