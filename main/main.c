@@ -217,25 +217,6 @@ static void draw_reverse_artificial_horizon() {
             }
         }
     }
-    
-    // Визуальные индикаторы наклона по краям матрицы
-    // Индикатор тангажа слева
-    int pitch_indicator = center_y + (int)(aircraft_attitude.pitch * 0.5f);
-    for (int dy = -1; dy <= 1; dy++) {
-        int indicator_y = pitch_indicator + dy;
-        if (indicator_y >= 0 && indicator_y < LED_MATRIX_SIZE) {
-            set_pixel_color(0, indicator_y, 0, 255, 0); // Зеленый - тангаж
-        }
-    }
-    
-    // Индикатор крена сверху
-    int roll_indicator = center_x + (int)(aircraft_attitude.roll * 0.5f);
-    for (int dx = -1; dx <= 1; dx++) {
-        int indicator_x = roll_indicator + dx;
-        if (indicator_x >= 0 && indicator_x < LED_MATRIX_SIZE) {
-            set_pixel_color(indicator_x, 0, 255, 255, 0); // Желтый - крен
-        }
-    }
 }
 
 // Задача для работы с MPU6050
