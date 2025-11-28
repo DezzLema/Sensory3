@@ -24,8 +24,15 @@ typedef struct {
     int16_t accel_z;
 } accel_type_t;
 
+// Структура для авиагоризонта
+typedef struct {
+    float pitch;  // тангаж (наклон вперед/назад)
+    float roll;   // крен (наклон влево/вправо)
+} attitude_t;
+
 // Глобальные переменные
 static accel_type_t accel_data;
+static attitude_t aircraft_attitude = {0, 0};
 static uint8_t led_matrix[LED_NUM * 3];
 static rmt_channel_handle_t led_chan = NULL;
 static rmt_encoder_handle_t led_encoder = NULL;
@@ -73,22 +80,26 @@ static esp_err_t mpu6050_read_accel(accel_type_t *data) {
     return err;
 }
 
-// Расчет наклона из данных акселерометра
-static void calculate_tilt(float *tilt_x, float *tilt_y) {
-    // Конвертация в g
-    float ax = accel_data.accel_x / 8192.0f;
+// Расчет углов наклона из данных акселерометра
+static void calculate_attitude() {
+    // Конвертация в g (ускорение свободного падения)
+    float ax = accel_data.accel_x / 8192.0f;  // ±4g диапазон
     float ay = accel_data.accel_y / 8192.0f;
     float az = accel_data.accel_z / 8192.0f;
     
-    // Расчет углов наклона
-    *tilt_x = atan2f(ay, sqrtf(ax*ax + az*az)) * 180.0f / M_PI; // Наклон влево/вправо
-    *tilt_y = atan2f(-ax, sqrtf(ay*ay + az*az)) * 180.0f / M_PI; // Наклон вперед/назад
+    // Расчет углов (в радианах)
+    aircraft_attitude.roll = atan2f(ay, az);                    // Крен
+    aircraft_attitude.pitch = atan2f(-ax, sqrtf(ay*ay + az*az)); // Тангаж
     
-    // Ограничение
-    if (*tilt_x > 45) *tilt_x = 45;
-    if (*tilt_x < -45) *tilt_x = -45;
-    if (*tilt_y > 45) *tilt_y = 45;
-    if (*tilt_y < -45) *tilt_y = -45;
+    // Конвертация в градусы
+    aircraft_attitude.roll = aircraft_attitude.roll * 180.0f / M_PI;
+    aircraft_attitude.pitch = aircraft_attitude.pitch * 180.0f / M_PI;
+    
+    // Ограничение углов
+    if (aircraft_attitude.roll > 45) aircraft_attitude.roll = 45;
+    if (aircraft_attitude.roll < -45) aircraft_attitude.roll = -45;
+    if (aircraft_attitude.pitch > 45) aircraft_attitude.pitch = 45;
+    if (aircraft_attitude.pitch < -45) aircraft_attitude.pitch = -45;
 }
 
 // Инициализация RMT для WS2812
@@ -152,100 +163,78 @@ static void update_matrix() {
     vTaskDelay(pdMS_TO_TICKS(10));
 }
 
-// Индикация наклона для оценки 3 с использованием всей матрицы
-static void draw_tilt_indication() {
-    float tilt_x, tilt_y;
-    calculate_tilt(&tilt_x, &tilt_y);
+// Отрисовка авиагоризонта с ОБРАТНОЙ индикацией
+static void draw_reverse_artificial_horizon() {
+    // Центр матрицы
+    int center_x = LED_MATRIX_SIZE / 2;
+    int center_y = LED_MATRIX_SIZE / 2;
     
-    // Определяем зону, которая должна гаснуть
-    int dead_zone_start_x = -1, dead_zone_end_x = -1;
-    int dead_zone_start_y = -1, dead_zone_end_y = -1;
+    // ОБРАТНАЯ ИНДИКАЦИЯ: инвертируем углы
+    float reverse_pitch = -aircraft_attitude.pitch; // Обратный тангаж
+    float reverse_roll = -aircraft_attitude.roll;   // Обратный крен
     
-    // Определяем какая зона гаснет в зависимости от наклона
-    float threshold = 10.0f; // Порог наклона для гашения
+    // Смещение горизонта - ОБРАТНАЯ индикация
+    int horizon_offset = (int)(reverse_pitch * 2.0f); // Обратное смещение
     
-    if (tilt_x > threshold) {
-        // Наклон вправо - гаснет правая часть
-        dead_zone_start_x = LED_MATRIX_SIZE / 2;
-        dead_zone_end_x = LED_MATRIX_SIZE - 1;
-        dead_zone_start_y = 0;
-        dead_zone_end_y = LED_MATRIX_SIZE - 1;
-    } else if (tilt_x < -threshold) {
-        // Наклон влево - гаснет левая часть
-        dead_zone_start_x = 0;
-        dead_zone_end_x = LED_MATRIX_SIZE / 2 - 1;
-        dead_zone_start_y = 0;
-        dead_zone_end_y = LED_MATRIX_SIZE - 1;
-    } else if (tilt_y > threshold) {
-        // Наклон вперед - гаснет верхняя часть
-        dead_zone_start_x = 0;
-        dead_zone_end_x = LED_MATRIX_SIZE - 1;
-        dead_zone_start_y = 0;
-        dead_zone_end_y = LED_MATRIX_SIZE / 2 - 1;
-    } else if (tilt_y < -threshold) {
-        // Наклон назад - гаснет нижняя часть
-        dead_zone_start_x = 0;
-        dead_zone_end_x = LED_MATRIX_SIZE - 1;
-        dead_zone_start_y = LED_MATRIX_SIZE / 2;
-        dead_zone_end_y = LED_MATRIX_SIZE - 1;
-    }
+    // Базовый горизонт (без наклона)
+    int base_horizon = center_y + horizon_offset;
     
-    // Базовый цвет в зависимости от направления наклона
-    float total_tilt = sqrtf(tilt_x*tilt_x + tilt_y*tilt_y);
-    uint8_t base_intensity = (uint8_t)(fabsf(total_tilt) * 5.0f);
-    if (base_intensity > 255) base_intensity = 255;
-    
-    // Цвет зависит от направления наклона
-    uint8_t r, g, b;
-    if (fabsf(tilt_x) > fabsf(tilt_y)) {
-        // Преобладает горизонтальный наклон
-        if (tilt_x > 0) {
-            r = base_intensity; g = base_intensity/2; b = 0; // Оранжевый для правого наклона
-        } else {
-            r = 0; g = base_intensity; b = base_intensity/2; // Бирюзовый для левого наклона
-        }
-    } else {
-        // Преобладает вертикальный наклон
-        if (tilt_y > 0) {
-            r = base_intensity; g = 0; b = base_intensity/2; // Пурпурный для наклона вперед
-        } else {
-            r = base_intensity/2; g = base_intensity; b = 0; // Желто-зеленый для наклона назад
-        }
-    }
-    
-    // Отрисовка всей матрицы 8x8
+    // Отрисовка неба и земли с наклоном
     for (int y = 0; y < LED_MATRIX_SIZE; y++) {
         for (int x = 0; x < LED_MATRIX_SIZE; x++) {
-            // Проверяем, находится ли пиксель в гаснущей зоне
-            bool is_dead_zone = (dead_zone_start_x != -1) && 
-                               (x >= dead_zone_start_x && x <= dead_zone_end_x) &&
-                               (y >= dead_zone_start_y && y <= dead_zone_end_y);
+            // Расчет наклона горизонта (ОБРАТНАЯ индикация)
+            int tilted_horizon = base_horizon + (int)(reverse_roll * (x - center_x) * 0.2f);
             
-            if (is_dead_zone) {
-                // Гаснущая зона - черный цвет
-                set_pixel_color(x, y, 0, 0, 0);
+            // Определение цвета: выше наклоненного горизонта - земля, ниже - небо
+            if (y < tilted_horizon) {
+                // ЗЕМЛЯ (коричневая) - СВЕРХУ при обратной индикации
+                set_pixel_color(x, y, 120, 60, 0); // Коричневый
             } else {
-                // Активная зона - цвет зависит от наклона
-                // Создаем градиент от центра к краям
-                float center_x = (LED_MATRIX_SIZE - 1) / 2.0f;
-                float center_y = (LED_MATRIX_SIZE - 1) / 2.0f;
-                float distance = sqrtf(powf(x - center_x, 2) + powf(y - center_y, 2));
-                float max_distance = sqrtf(powf(center_x, 2) + powf(center_y, 2));
-                float intensity_factor = 1.0f - (distance / max_distance) * 0.5f;
-                
-                uint8_t pixel_r = (uint8_t)(r * intensity_factor);
-                uint8_t pixel_g = (uint8_t)(g * intensity_factor);
-                uint8_t pixel_b = (uint8_t)(b * intensity_factor);
-                
-                set_pixel_color(x, y, pixel_r, pixel_g, pixel_b);
+                // НЕБО (синее) - СНИЗУ при обратной индикации
+                set_pixel_color(x, y, 0, 0, 150); // Синий
             }
         }
     }
     
-    // Центральный крест для ориентации
-    for (int i = 0; i < LED_MATRIX_SIZE; i++) {
-        set_pixel_color(LED_MATRIX_SIZE/2, i, 255, 255, 255); // Вертикальная линия
-        set_pixel_color(i, LED_MATRIX_SIZE/2, 255, 255, 255); // Горизонтальная линия
+    // Отрисовка линии горизонта
+    for (int x = 0; x < LED_MATRIX_SIZE; x++) {
+        int horizon_y = base_horizon + (int)(reverse_roll * (x - center_x) * 0.2f);
+        
+        if (horizon_y >= 0 && horizon_y < LED_MATRIX_SIZE) {
+            set_pixel_color(x, horizon_y, 255, 255, 255); // Белая линия горизонта
+        }
+    }
+    
+    // Центральный указатель (самолет) - всегда в центре
+    set_pixel_color(center_x, center_y, 255, 0, 0); // Красный центр
+    
+    // Крылья самолета (горизонтальные)
+    for (int dx = -2; dx <= 2; dx++) {
+        if (dx != 0) { // Пропускаем центр
+            int wing_x = center_x + dx;
+            if (wing_x >= 0 && wing_x < LED_MATRIX_SIZE) {
+                set_pixel_color(wing_x, center_y, 255, 255, 255);
+            }
+        }
+    }
+    
+    // Визуальные индикаторы наклона по краям матрицы
+    // Индикатор тангажа слева
+    int pitch_indicator = center_y + (int)(aircraft_attitude.pitch * 0.5f);
+    for (int dy = -1; dy <= 1; dy++) {
+        int indicator_y = pitch_indicator + dy;
+        if (indicator_y >= 0 && indicator_y < LED_MATRIX_SIZE) {
+            set_pixel_color(0, indicator_y, 0, 255, 0); // Зеленый - тангаж
+        }
+    }
+    
+    // Индикатор крена сверху
+    int roll_indicator = center_x + (int)(aircraft_attitude.roll * 0.5f);
+    for (int dx = -1; dx <= 1; dx++) {
+        int indicator_x = roll_indicator + dx;
+        if (indicator_x >= 0 && indicator_x < LED_MATRIX_SIZE) {
+            set_pixel_color(indicator_x, 0, 255, 255, 0); // Желтый - крен
+        }
     }
 }
 
@@ -253,11 +242,10 @@ static void draw_tilt_indication() {
 static void mpu6050_task(void *pvParameter) {
     while (true) {
         if (mpu6050_read_accel(&accel_data) == ESP_OK) {
-            float tilt_x, tilt_y;
-            calculate_tilt(&tilt_x, &tilt_y);
-            printf("Accel: X=%d, Y=%d, Z=%d | Tilt: X=%.1f°, Y=%.1f°\n", 
+            calculate_attitude();
+            printf("Accel: X=%d, Y=%d, Z=%d | Pitch=%.1f°, Roll=%.1f°\n", 
                    accel_data.accel_x, accel_data.accel_y, accel_data.accel_z,
-                   tilt_x, tilt_y);
+                   aircraft_attitude.pitch, aircraft_attitude.roll);
         } else {
             printf("Error reading accel data\n");
         }
@@ -265,15 +253,15 @@ static void mpu6050_task(void *pvParameter) {
     }
 }
 
-// Задача для индикации наклона
-static void tilt_indication_task(void *pvParameter) {
+// Задача для анимации авиагоризонта
+static void horizon_task(void *pvParameter) {
     while (true) {
         // Очистка и отрисовка
         clear_matrix();
-        draw_tilt_indication();
+        draw_reverse_artificial_horizon();
         update_matrix();
         
-        vTaskDelay(pdMS_TO_TICKS(100)); // 10 FPS
+        vTaskDelay(pdMS_TO_TICKS(50)); // 20 FPS
     }
 }
 
@@ -283,13 +271,16 @@ void app_main(void) {
     mpu6050_init();
     ws2812_init();
     
-    printf("MEMS Accelerometer Tilt Indication Demo Started\n");
-    printf("Variant 4 (Grade 3): Full 8x8 matrix tilt indication\n");
-    printf("Dead zones: Right(tilt>10°), Left(tilt<-10°), Top(tilt>10°), Bottom(tilt<-10°)\n");
+    printf("Reverse Artificial Horizon Demo Started\n");
+    printf("Variant 4: Reverse indication - horizon moves OPPOSITE to tilt\n");
+    printf("Tilt FORWARD -> horizon goes UP\n");
+    printf("Tilt BACK -> horizon goes DOWN\n");
+    printf("Tilt RIGHT -> horizon tilts LEFT\n");
+    printf("Tilt LEFT -> horizon tilts RIGHT\n");
     
     // Создание задач
     xTaskCreate(mpu6050_task, "mpu6050_task", 4096, NULL, 2, NULL);
-    xTaskCreate(tilt_indication_task, "tilt_task", 4096, NULL, 2, NULL);
+    xTaskCreate(horizon_task, "horizon_task", 4096, NULL, 2, NULL);
     
     // Бесконечный цикл
     while (true) {
