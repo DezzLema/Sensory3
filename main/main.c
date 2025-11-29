@@ -163,7 +163,26 @@ static void update_matrix() {
     vTaskDelay(pdMS_TO_TICKS(10));
 }
 
-// Отрисовка авиагоризонта с ОБРАТНОЙ индикацией
+// Функция для преобразования угла наклона в цвет (от зеленого к красному для земли, от синего к фиолетовому для неба)
+static void tilt_to_color(float tilt, uint8_t *r, uint8_t *g, uint8_t *b, bool is_sky) {
+    // Нормализация угла от -45° до +45° в диапазон 0-255
+    int intensity = (int)((fabsf(tilt) / 45.0f) * 255.0f);
+    if (intensity > 255) intensity = 255;
+    
+    if (is_sky) {
+        // Для неба: от синего (малый наклон) к фиолетовому (большой наклон)
+        *b = 255;
+        *r = intensity;
+        *g = 0;
+    } else {
+        // Для земли: от зеленого (малый наклон) к красному (большой наклон)
+        *g = 255 - intensity;
+        *r = intensity;
+        *b = 0;
+    }
+}
+
+// Отрисовка авиагоризонта с ОБРАТНОЙ индикацией и изменением цвета
 static void draw_reverse_artificial_horizon() {
     // Центр матрицы
     int center_x = LED_MATRIX_SIZE / 2;
@@ -179,6 +198,9 @@ static void draw_reverse_artificial_horizon() {
     // Базовый горизонт (без наклона)
     int base_horizon = center_y + horizon_offset;
     
+    // Определение цвета на основе степени наклона
+    float max_tilt = fmaxf(fabsf(aircraft_attitude.pitch), fabsf(aircraft_attitude.roll));
+    
     // Отрисовка неба и земли с наклоном
     for (int y = 0; y < LED_MATRIX_SIZE; y++) {
         for (int x = 0; x < LED_MATRIX_SIZE; x++) {
@@ -187,11 +209,15 @@ static void draw_reverse_artificial_horizon() {
             
             // Определение цвета: выше наклоненного горизонта - земля, ниже - небо
             if (y < tilted_horizon) {
-                // ЗЕМЛЯ (коричневая) - СВЕРХУ при обратной индикации
-                set_pixel_color(x, y, 120, 60, 0); // Коричневый
+                // ЗЕМЛЯ (цвет зависит от степени наклона) - СВЕРХУ при обратной индикации
+                uint8_t r, g, b;
+                tilt_to_color(max_tilt, &r, &g, &b, false); // false = земля
+                set_pixel_color(x, y, r, g, b);
             } else {
-                // НЕБО (синее) - СНИЗУ при обратной индикации
-                set_pixel_color(x, y, 0, 0, 150); // Синий
+                // НЕБО (цвет зависит от степени наклона) - СНИЗУ при обратной индикации
+                uint8_t r, g, b;
+                tilt_to_color(max_tilt, &r, &g, &b, true); // true = небо
+                set_pixel_color(x, y, r, g, b);
             }
         }
     }
@@ -215,6 +241,33 @@ static void draw_reverse_artificial_horizon() {
             if (wing_x >= 0 && wing_x < LED_MATRIX_SIZE) {
                 set_pixel_color(wing_x, center_y, 255, 255, 255);
             }
+        }
+    }
+    
+    // Гашение светодиода в направлении наклона
+    int tilt_x = 0, tilt_y = 0;
+    
+    // Определяем направление наклона
+    if (aircraft_attitude.roll > 5.0f) {
+        tilt_x = 1; // Наклон вправо
+    } else if (aircraft_attitude.roll < -5.0f) {
+        tilt_x = -1; // Наклон влево
+    }
+    
+    if (aircraft_attitude.pitch > 5.0f) {
+        tilt_y = 1; // Наклон вперед
+    } else if (aircraft_attitude.pitch < -5.0f) {
+        tilt_y = -1; // Наклон назад
+    }
+    
+    // Гасим светодиод в направлении наклона (если есть значительный наклон)
+    if (tilt_x != 0 || tilt_y != 0) {
+        int target_x = center_x + tilt_x;
+        int target_y = center_y + tilt_y;
+        
+        if (target_x >= 0 && target_x < LED_MATRIX_SIZE && 
+            target_y >= 0 && target_y < LED_MATRIX_SIZE) {
+            set_pixel_color(target_x, target_y, 0, 0, 0); // Гасим светодиод
         }
     }
 }
@@ -258,6 +311,10 @@ void app_main(void) {
     printf("Tilt BACK -> horizon goes DOWN\n");
     printf("Tilt RIGHT -> horizon tilts LEFT\n");
     printf("Tilt LEFT -> horizon tilts RIGHT\n");
+    printf("Color changes based on tilt degree:\n");
+    printf("- Ground: green (small tilt) to red (large tilt)\n");
+    printf("- Sky: blue (small tilt) to purple (large tilt)\n");
+    printf("LED in tilt direction turns off\n");
     
     // Создание задач
     xTaskCreate(mpu6050_task, "mpu6050_task", 4096, NULL, 2, NULL);
